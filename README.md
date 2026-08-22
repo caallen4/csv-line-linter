@@ -34,6 +34,9 @@ $ ./target/release/csvlint orders.csv other.csv
 - `unclosed-quote` - a quoted field is still open when the file ends.
 - `stray-quote` - a `"` shows up outside of a quoted field, which almost
   always means a text field wasn't quoted the way it should have been.
+- `duplicate-column` - two or more header columns share the same name,
+  which usually means whatever reads this file by column name will only
+  ever see one of them.
 
 Line numbers point at the line a row *starts* on. A quoted field can span
 several lines (it's legal for a field to contain a literal newline), and

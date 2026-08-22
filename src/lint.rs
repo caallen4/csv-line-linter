@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt;
 
 /// One problem found while scanning a CSV file.
@@ -30,6 +32,34 @@ pub fn lint(input: &str) -> Vec<Finding> {
 
     if let Some(header) = records.first() {
         let expected = header.fields.len();
+
+        let mut columns_by_name: HashMap<&str, Vec<usize>> = HashMap::new();
+        for (i, name) in header.fields.iter().enumerate() {
+            columns_by_name.entry(name.as_str()).or_default().push(i + 1);
+        }
+        let mut already_reported: HashSet<&str> = HashSet::new();
+        for name in &header.fields {
+            if !already_reported.insert(name.as_str()) {
+                continue;
+            }
+            let columns = &columns_by_name[name.as_str()];
+            if columns.len() > 1 {
+                let column_list = columns
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                findings.push(Finding {
+                    line: header.line,
+                    rule: "duplicate-column",
+                    message: format!(
+                        "column name {:?} appears more than once (columns {})",
+                        name, column_list
+                    ),
+                });
+            }
+        }
+
         for record in &records[1..] {
             let actual = record.fields.len();
             if actual != expected {
@@ -230,6 +260,26 @@ mod tests {
             name: "empty quoted field is a real field, not a blank line",
             input: "a\n\"\"\n",
             expected: &[],
+        },
+        Case {
+            name: "duplicate column name in header is flagged",
+            input: "a,b,a\n1,2,3\n",
+            expected: &[(1, "duplicate-column")],
+        },
+        Case {
+            name: "column name repeated three times reports one finding",
+            input: "a,a,a\n1,2,3\n",
+            expected: &[(1, "duplicate-column")],
+        },
+        Case {
+            name: "two different duplicate names each report separately",
+            input: "a,b,a,b\n1,2,3,4\n",
+            expected: &[(1, "duplicate-column"), (1, "duplicate-column")],
+        },
+        Case {
+            name: "repeated empty column names count as a duplicate too",
+            input: "a,,b,\n1,2,3,4\n",
+            expected: &[(1, "duplicate-column")],
         },
     ];
 
