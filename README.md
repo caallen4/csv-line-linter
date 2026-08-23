@@ -37,6 +37,9 @@ $ ./target/release/csvlint orders.csv other.csv
 - `duplicate-column` - two or more header columns share the same name,
   which usually means whatever reads this file by column name will only
   ever see one of them.
+- `trailing-whitespace` - an unquoted field has a trailing space or tab
+  right before the delimiter or end of line. Whitespace inside a quoted
+  field is left alone, since quoting is how CSV says to keep it on purpose.
 
 Line numbers point at the line a row *starts* on. A quoted field can span
 several lines (it's legal for a field to contain a literal newline), and

@@ -25,7 +25,8 @@ struct Record {
 ///
 /// The first record is treated as the header; every later record is
 /// compared against it for field count. Parsing itself can also produce
-/// findings (an unclosed quote, a stray quote outside a quoted field).
+/// findings (an unclosed quote, a stray quote outside a quoted field, an
+/// unquoted field with trailing whitespace).
 pub fn lint(input: &str) -> Vec<Finding> {
     let mut findings = Vec::new();
     let records = parse_records(input, &mut findings);
@@ -96,12 +97,16 @@ fn parse_records(input: &str, findings: &mut Vec<Finding>) -> Vec<Record> {
         let mut fields: Vec<String> = Vec::new();
         let mut field = String::new();
         let mut in_quotes = false;
+        let mut field_is_quoted = false;
         let mut record_has_content = false;
 
         loop {
             let c = match chars.next() {
                 Some(c) => c,
                 None => {
+                    if !field_is_quoted {
+                        push_trailing_whitespace_finding(findings, line, &field);
+                    }
                     fields.push(field);
                     if in_quotes {
                         findings.push(Finding {
@@ -135,6 +140,7 @@ fn parse_records(input: &str, findings: &mut Vec<Finding>) -> Vec<Record> {
             match c {
                 '"' if field.is_empty() => {
                     in_quotes = true;
+                    field_is_quoted = true;
                     record_has_content = true;
                 }
                 '"' => {
@@ -147,12 +153,20 @@ fn parse_records(input: &str, findings: &mut Vec<Finding>) -> Vec<Record> {
                     record_has_content = true;
                 }
                 ',' => {
+                    if !field_is_quoted {
+                        push_trailing_whitespace_finding(findings, line, &field);
+                    }
                     fields.push(std::mem::take(&mut field));
+                    field_is_quoted = false;
                     record_has_content = true;
                 }
                 '\r' => {}
                 '\n' => {
+                    if !field_is_quoted {
+                        push_trailing_whitespace_finding(findings, line, &field);
+                    }
                     fields.push(std::mem::take(&mut field));
+                    field_is_quoted = false;
                     line += 1;
                     break;
                 }
@@ -173,6 +187,20 @@ fn parse_records(input: &str, findings: &mut Vec<Finding>) -> Vec<Record> {
     }
 
     records
+}
+
+// Whitespace at the end of an unquoted field is almost always a stray space
+// from hand-editing or a misconfigured export, since anyone who meant to
+// keep it would have quoted the field. Quoted fields are exempt: quoting is
+// exactly how CSV says "keep this whitespace on purpose".
+fn push_trailing_whitespace_finding(findings: &mut Vec<Finding>, line: usize, field: &str) {
+    if field.ends_with(' ') || field.ends_with('\t') {
+        findings.push(Finding {
+            line,
+            rule: "trailing-whitespace",
+            message: "unquoted field has trailing whitespace before the delimiter".to_string(),
+        });
+    }
 }
 
 #[cfg(test)]
@@ -280,6 +308,31 @@ mod tests {
             name: "repeated empty column names count as a duplicate too",
             input: "a,,b,\n1,2,3,4\n",
             expected: &[(1, "duplicate-column")],
+        },
+        Case {
+            name: "trailing space before a comma is flagged",
+            input: "a,b\nfoo ,2\n",
+            expected: &[(2, "trailing-whitespace")],
+        },
+        Case {
+            name: "trailing tab before a newline is flagged",
+            input: "a,b\n1,2\t\n",
+            expected: &[(2, "trailing-whitespace")],
+        },
+        Case {
+            name: "trailing whitespace on the last field with no trailing newline is flagged",
+            input: "a,b\n1,2 ",
+            expected: &[(2, "trailing-whitespace")],
+        },
+        Case {
+            name: "trailing whitespace inside a quoted field is not flagged",
+            input: "a,b\n\"foo \",2\n",
+            expected: &[],
+        },
+        Case {
+            name: "leading whitespace in an unquoted field is not flagged",
+            input: "a,b\n foo,2\n",
+            expected: &[],
         },
     ];
 
