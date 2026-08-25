@@ -28,6 +28,14 @@ $ cargo build --release
 $ ./target/release/csvlint orders.csv other.csv
 ```
 
+Leave off the file argument, or pass `-`, to read from stdin instead - for
+piping in the output of another command:
+
+```
+$ curl -s https://example.com/export.csv | csvlint
+stdin:14: ragged-row: row has 3 fields but header has 4
+```
+
 ## What it checks right now
 
 - `ragged-row` - a row has a different number of fields than the header row.
