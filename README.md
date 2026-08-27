@@ -20,7 +20,16 @@ orders.csv:47: unclosed-quote: quoted field is never closed before end of file
 ```
 
 No output and exit code 0 means the file is clean. Any finding sets the
-exit code to 1, so it can be dropped into a pre-commit hook or CI step.
+exit code to 1, so it can be dropped into a pre-commit hook or CI step -
+except `stray-quote`, which is reported but does not fail the run on its
+own, since it is often a false alarm (an apostrophe, a name with a quote
+mark in it) rather than an actually broken row. Pass `--strict` to make it
+fatal too:
+
+```
+$ cargo run -- --strict orders.csv
+```
+
 Build a release binary the normal way:
 
 ```
@@ -42,6 +51,7 @@ stdin:14: ragged-row: row has 3 fields but header has 4
 - `unclosed-quote` - a quoted field is still open when the file ends.
 - `stray-quote` - a `"` shows up outside of a quoted field, which almost
   always means a text field wasn't quoted the way it should have been.
+  Warning-level: shown but not fatal unless `--strict` is passed.
 - `duplicate-column` - two or more header columns share the same name,
   which usually means whatever reads this file by column name will only
   ever see one of them.

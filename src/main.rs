@@ -6,7 +6,15 @@ use std::process::ExitCode;
 mod lint;
 
 fn main() -> ExitCode {
-    let mut paths: Vec<String> = env::args().skip(1).collect();
+    let mut strict = false;
+    let mut paths: Vec<String> = Vec::new();
+    for arg in env::args().skip(1) {
+        if arg == "--strict" {
+            strict = true;
+        } else {
+            paths.push(arg);
+        }
+    }
 
     // No file given, or an explicit "-", both mean "read from stdin" -
     // that way csvlint drops into a pipeline the same way grep or cat do.
@@ -14,7 +22,7 @@ fn main() -> ExitCode {
         paths.push("-".to_string());
     }
 
-    let mut found_any = false;
+    let mut should_fail = false;
 
     for path in &paths {
         let contents = if path == "-" {
@@ -23,7 +31,7 @@ fn main() -> ExitCode {
                 Ok(_) => buf,
                 Err(e) => {
                     eprintln!("stdin: {}", e);
-                    found_any = true;
+                    should_fail = true;
                     continue;
                 }
             }
@@ -32,7 +40,7 @@ fn main() -> ExitCode {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("{}: {}", path, e);
-                    found_any = true;
+                    should_fail = true;
                     continue;
                 }
             }
@@ -41,11 +49,13 @@ fn main() -> ExitCode {
         let label = if path == "-" { "stdin" } else { path.as_str() };
         for finding in lint::lint(&contents) {
             println!("{}:{}", label, finding);
-            found_any = true;
+            if strict || finding.severity() == lint::Severity::Error {
+                should_fail = true;
+            }
         }
     }
 
-    if found_any {
+    if should_fail {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

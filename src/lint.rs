@@ -16,6 +16,26 @@ impl fmt::Display for Finding {
     }
 }
 
+/// Whether a finding should fail a normal run, or only a `--strict` one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
+impl Finding {
+    /// `stray-quote` is often a false positive - an apostrophe-heavy text
+    /// field, a name with an embedded quote mark - so on its own it is
+    /// reported but does not fail the run unless `--strict` is passed.
+    /// Everything else points at a row that is actually malformed.
+    pub fn severity(&self) -> Severity {
+        match self.rule {
+            "stray-quote" => Severity::Warning,
+            _ => Severity::Error,
+        }
+    }
+}
+
 struct Record {
     line: usize,
     fields: Vec<String>,
@@ -335,6 +355,24 @@ mod tests {
             expected: &[],
         },
     ];
+
+    #[test]
+    fn stray_quote_is_a_warning_everything_else_is_an_error() {
+        let findings = lint("a,b\nhe said \"hi\",2\n\"oops,2");
+        for finding in &findings {
+            let expected = if finding.rule == "stray-quote" {
+                Severity::Warning
+            } else {
+                Severity::Error
+            };
+            assert_eq!(
+                finding.severity(),
+                expected,
+                "rule {:?} had unexpected severity",
+                finding.rule
+            );
+        }
+    }
 
     #[test]
     fn table() {
