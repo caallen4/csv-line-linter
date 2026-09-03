@@ -30,6 +30,18 @@ fatal too:
 $ cargo run -- --strict orders.csv
 ```
 
+Pass `--json` to get findings as a single JSON array on stdout instead of
+one line of text per finding - useful for a CI step that wants to parse the
+output rather than grep it:
+
+```
+$ cargo run -- --json orders.csv
+[{"file":"orders.csv","line":14,"rule":"ragged-row","severity":"error","message":"row has 3 fields but header has 4"}]
+```
+
+`--json` and `--strict` combine normally: `--strict` still controls the
+exit code, it just doesn't change the shape of the JSON output.
+
 Build a release binary the normal way:
 
 ```
