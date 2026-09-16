@@ -70,6 +70,10 @@ stdin:14: ragged-row: row has 3 fields but header has 4
 - `trailing-whitespace` - an unquoted field has a trailing space or tab
   right before the delimiter or end of line. Whitespace inside a quoted
   field is left alone, since quoting is how CSV says to keep it on purpose.
+- `mixed-line-endings` - the file switches between `\r\n` and `\n` (or a
+  bare `\r`) partway through. A file that's consistently one or the other
+  is fine; a file assembled from two different exports, or hand-edited
+  after being generated, often isn't. Only the first switch is reported.
 
 Line numbers point at the line a row *starts* on. A quoted field can span
 several lines (it's legal for a field to contain a literal newline), and

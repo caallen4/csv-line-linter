@@ -49,6 +49,7 @@ struct Record {
 /// unquoted field with trailing whitespace).
 pub fn lint(input: &str) -> Vec<Finding> {
     let mut findings = Vec::new();
+    detect_mixed_line_endings(input, &mut findings);
     let records = parse_records(input, &mut findings);
 
     if let Some(header) = records.first() {
@@ -100,6 +101,52 @@ pub fn lint(input: &str) -> Vec<Finding> {
 
     findings.sort_by_key(|f| f.line);
     findings
+}
+
+// A file that switches between \r\n and bare \n partway through usually
+// means it was assembled from exports done by two different tools, or had
+// one section hand-edited after the rest was generated. This walks the raw
+// text once, independent of quoting, since the question of which line
+// terminator is in use is about how the file is laid out, not about CSV
+// field structure - a quoted multiline field's internal newlines are still
+// real line terminators as far as a tool reading the file byte by byte is
+// concerned. Only the first inconsistency is reported; once the file has
+// mixed endings once, flagging every later line adds noise without adding
+// information.
+fn detect_mixed_line_endings(input: &str, findings: &mut Vec<Finding>) {
+    let mut established: Option<&'static str> = None;
+    let mut line = 1usize;
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        let style = match c {
+            '\r' if chars.peek() == Some(&'\n') => {
+                chars.next();
+                "CRLF"
+            }
+            '\r' => "CR",
+            '\n' => "LF",
+            _ => continue,
+        };
+
+        match established {
+            None => established = Some(style),
+            Some(existing) if existing != style => {
+                findings.push(Finding {
+                    line,
+                    rule: "mixed-line-endings",
+                    message: format!(
+                        "line ending changes from {} to {} partway through the file",
+                        existing, style
+                    ),
+                });
+                return;
+            }
+            _ => {}
+        }
+
+        line += 1;
+    }
 }
 
 // Parses `input` as comma-separated, double-quote-quoted records (RFC 4180
@@ -353,6 +400,26 @@ mod tests {
             name: "leading whitespace in an unquoted field is not flagged",
             input: "a,b\n foo,2\n",
             expected: &[],
+        },
+        Case {
+            name: "consistent bare cr line endings are not flagged",
+            input: "a,b\r1,2\r",
+            expected: &[],
+        },
+        Case {
+            name: "switching from crlf to lf partway through is flagged",
+            input: "a,b\r\n1,2\n3,4\r\n",
+            expected: &[(2, "mixed-line-endings")],
+        },
+        Case {
+            name: "switching from lf to crlf partway through is flagged",
+            input: "a,b\n1,2\r\n3,4\n",
+            expected: &[(2, "mixed-line-endings")],
+        },
+        Case {
+            name: "only the first line ending mismatch is reported",
+            input: "a,b\r\n1,2\n3,4\r\n5,6\n",
+            expected: &[(2, "mixed-line-endings")],
         },
     ];
 
