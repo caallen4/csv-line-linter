@@ -74,6 +74,11 @@ stdin:14: ragged-row: row has 3 fields but header has 4
   bare `\r`) partway through. A file that's consistently one or the other
   is fine; a file assembled from two different exports, or hand-edited
   after being generated, often isn't. Only the first switch is reported.
+- `byte-order-mark` - the file starts with a UTF-8 byte-order mark.
+  Warning-level: it doesn't break parsing, but a reader that doesn't strip
+  it ends up with a header whose first column is named `"﻿name"`
+  instead of `"name"`. csvlint strips it before comparing header names, so
+  a duplicate column hidden behind a BOM is still caught.
 
 Line numbers point at the line a row *starts* on. A quoted field can span
 several lines (it's legal for a field to contain a literal newline), and

@@ -30,7 +30,7 @@ impl Finding {
     /// Everything else points at a row that is actually malformed.
     pub fn severity(&self) -> Severity {
         match self.rule {
-            "stray-quote" => Severity::Warning,
+            "stray-quote" | "byte-order-mark" => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -49,6 +49,7 @@ struct Record {
 /// unquoted field with trailing whitespace).
 pub fn lint(input: &str) -> Vec<Finding> {
     let mut findings = Vec::new();
+    let input = strip_bom(input, &mut findings);
     detect_mixed_line_endings(input, &mut findings);
     let records = parse_records(input, &mut findings);
 
@@ -101,6 +102,29 @@ pub fn lint(input: &str) -> Vec<Finding> {
 
     findings.sort_by_key(|f| f.line);
     findings
+}
+
+// `fs::read_to_string` decodes a leading BOM as U+FEFF rather than dropping
+// it, so left alone it would fold into the first header name (readers that
+// don't strip it end up with a header literally named "\u{FEFF}name"
+// instead of "name"). Reported as a warning since the file is otherwise
+// well-formed - it's Excel's default when saving UTF-8 CSVs - and stripped
+// here so the rest of the linter compares header names the way a
+// BOM-unaware reader would see them once that leading character is gone.
+fn strip_bom<'a>(input: &'a str, findings: &mut Vec<Finding>) -> &'a str {
+    match input.strip_prefix('\u{FEFF}') {
+        Some(rest) => {
+            findings.push(Finding {
+                line: 1,
+                rule: "byte-order-mark",
+                message: "file starts with a UTF-8 byte-order mark, which most CSV \
+                    readers do not strip and will fold into the first header name"
+                    .to_string(),
+            });
+            rest
+        }
+        None => input,
+    }
 }
 
 // A file that switches between \r\n and bare \n partway through usually
@@ -421,6 +445,21 @@ mod tests {
             input: "a,b\r\n1,2\n3,4\r\n5,6\n",
             expected: &[(2, "mixed-line-endings")],
         },
+        Case {
+            name: "byte order mark at start of file is flagged",
+            input: "\u{FEFF}a,b\n1,2\n",
+            expected: &[(1, "byte-order-mark")],
+        },
+        Case {
+            name: "byte order mark is stripped before header comparison, so duplicate column is still caught",
+            input: "\u{FEFF}a,a\n1,2\n",
+            expected: &[(1, "byte-order-mark"), (1, "duplicate-column")],
+        },
+        Case {
+            name: "byte order mark only affects the very first character, not one later in the file",
+            input: "a,b\n1,2\u{FEFF}\n",
+            expected: &[],
+        },
     ];
 
     #[test]
@@ -439,6 +478,14 @@ mod tests {
                 finding.rule
             );
         }
+    }
+
+    #[test]
+    fn byte_order_mark_is_a_warning() {
+        let findings = lint("\u{FEFF}a,b\n1,2\n");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, "byte-order-mark");
+        assert_eq!(findings[0].severity(), Severity::Warning);
     }
 
     #[test]
