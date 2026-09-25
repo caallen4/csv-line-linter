@@ -41,17 +41,25 @@ struct Record {
     fields: Vec<String>,
 }
 
+/// Scans `input` as comma-separated and returns every finding, sorted by
+/// line number. Shorthand for `lint_with_delimiter(input, ',')`.
+pub fn lint(input: &str) -> Vec<Finding> {
+    lint_with_delimiter(input, ',')
+}
+
 /// Scans `input` and returns every finding, sorted by line number.
 ///
 /// The first record is treated as the header; every later record is
 /// compared against it for field count. Parsing itself can also produce
 /// findings (an unclosed quote, a stray quote outside a quoted field, an
-/// unquoted field with trailing whitespace).
-pub fn lint(input: &str) -> Vec<Finding> {
+/// unquoted field with trailing whitespace). `delimiter` separates fields
+/// the way a comma normally would - a `"` is always the quote character
+/// regardless of what delimiter is chosen.
+pub fn lint_with_delimiter(input: &str, delimiter: char) -> Vec<Finding> {
     let mut findings = Vec::new();
     let input = strip_bom(input, &mut findings);
     detect_mixed_line_endings(input, &mut findings);
-    let records = parse_records(input, &mut findings);
+    let records = parse_records(input, delimiter, &mut findings);
 
     if let Some(header) = records.first() {
         let expected = header.fields.len();
@@ -173,12 +181,12 @@ fn detect_mixed_line_endings(input: &str, findings: &mut Vec<Finding>) {
     }
 }
 
-// Parses `input` as comma-separated, double-quote-quoted records (RFC 4180
-// style, with `""` as the escape for a literal quote inside a quoted
-// field). A completely blank line is skipped rather than turned into a
-// one-field row of empty string, since that is what every CSV export we
+// Parses `input` as `delimiter`-separated, double-quote-quoted records
+// (RFC 4180 style, with `""` as the escape for a literal quote inside a
+// quoted field). A completely blank line is skipped rather than turned into
+// a one-field row of empty string, since that is what every CSV export we
 // have run into actually means by a blank line.
-fn parse_records(input: &str, findings: &mut Vec<Finding>) -> Vec<Record> {
+fn parse_records(input: &str, delimiter: char, findings: &mut Vec<Finding>) -> Vec<Record> {
     let mut records = Vec::new();
     let mut chars = input.chars().peekable();
     let mut line = 1usize;
@@ -243,7 +251,7 @@ fn parse_records(input: &str, findings: &mut Vec<Finding>) -> Vec<Record> {
                     field.push(c);
                     record_has_content = true;
                 }
-                ',' => {
+                c if c == delimiter => {
                     if !field_is_quoted {
                         push_trailing_whitespace_finding(findings, line, &field);
                     }
@@ -486,6 +494,38 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule, "byte-order-mark");
         assert_eq!(findings[0].severity(), Severity::Warning);
+    }
+
+    #[test]
+    fn custom_delimiter_replaces_comma_as_the_field_separator() {
+        let findings = lint_with_delimiter("a|b\n1|2\n", '|');
+        assert_eq!(findings.len(), 0);
+
+        let findings = lint_with_delimiter("a|b\n1|2|3\n", '|');
+        assert_eq!(
+            findings.iter().map(|f| (f.line, f.rule)).collect::<Vec<_>>(),
+            vec![(2, "ragged-row")]
+        );
+    }
+
+    #[test]
+    fn custom_delimiter_leaves_comma_as_an_ordinary_character() {
+        // With '|' as the delimiter, a comma is just text - a row with commas
+        // in every field but the right number of pipes is not ragged.
+        let findings = lint_with_delimiter("a|b\n1,000|2,000\n", '|');
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn custom_delimiter_still_honors_quoting() {
+        let findings = lint_with_delimiter("a|b\n\"hi|there\"|2\n", '|');
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn tab_delimiter_is_supported() {
+        let findings = lint_with_delimiter("a\tb\n1\t2\n", '\t');
+        assert_eq!(findings.len(), 0);
     }
 
     #[test]

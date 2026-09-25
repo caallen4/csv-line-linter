@@ -7,9 +7,9 @@ opaque parse error with no line number. I got tired of finding out about
 these problems downstream, in whatever spreadsheet or import job happened to
 choke on them, so this checks the file itself first.
 
-It reads a CSV file, parses it properly (quoted fields, embedded commas,
-embedded newlines, `""` as an escaped quote), and prints every structural
-problem it finds along with the line it starts on.
+It reads a CSV file, parses it properly (quoted fields, embedded
+delimiters, embedded newlines, `""` as an escaped quote), and prints every
+structural problem it finds along with the line it starts on.
 
 ## Usage
 
@@ -48,6 +48,18 @@ Build a release binary the normal way:
 $ cargo build --release
 $ ./target/release/csvlint orders.csv other.csv
 ```
+
+Pass `--delimiter` if the file doesn't use commas - semicolon-separated
+exports from spreadsheet software that defaults to the system locale are
+the usual reason:
+
+```
+$ cargo run -- --delimiter ';' export.csv
+```
+
+The delimiter has to be a single character. Since an actual tab is
+awkward to type on a command line, `--delimiter '\t'` is accepted as
+shorthand for a literal tab.
 
 Leave off the file argument, or pass `-`, to read from stdin instead - for
 piping in the output of another command:
