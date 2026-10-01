@@ -9,6 +9,7 @@ fn main() -> ExitCode {
     let mut strict = false;
     let mut json = false;
     let mut delimiter = ',';
+    let mut disabled: Vec<String> = Vec::new();
     let mut paths: Vec<String> = Vec::new();
     let args: Vec<String> = env::args().skip(1).collect();
     let mut i = 0;
@@ -34,6 +35,22 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             };
+        } else if arg == "--rules" {
+            i += 1;
+            let raw = match args.get(i) {
+                Some(v) => v,
+                None => {
+                    eprintln!("--rules requires a value");
+                    return ExitCode::from(2);
+                }
+            };
+            match parse_rules(raw) {
+                Ok(names) => disabled.extend(names),
+                Err(e) => {
+                    eprintln!("--rules: {}", e);
+                    return ExitCode::from(2);
+                }
+            }
         } else {
             paths.push(arg.clone());
         }
@@ -73,6 +90,9 @@ fn main() -> ExitCode {
 
         let label = if path == "-" { "stdin" } else { path.as_str() };
         for finding in lint::lint_with_delimiter(&contents, delimiter) {
+            if disabled.iter().any(|name| name == finding.rule) {
+                continue;
+            }
             let is_error = finding.severity() == lint::Severity::Error;
             if strict || is_error {
                 should_fail = true;
@@ -101,6 +121,28 @@ fn main() -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+// Takes a comma-separated list where every entry is a rule name with a
+// leading "-", e.g. "-stray-quote,-trailing-whitespace", and returns the
+// bare names. Requiring the "-" leaves room for a plain name to mean "only
+// run this" later without changing what existing command lines do.
+fn parse_rules(raw: &str) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+    for entry in raw.split(',') {
+        let name = entry.trim().strip_prefix('-').ok_or_else(|| {
+            format!("{:?} must start with '-' to disable that rule", entry.trim())
+        })?;
+        if !lint::RULES.contains(&name) {
+            return Err(format!(
+                "unknown rule {:?} (known rules: {})",
+                name,
+                lint::RULES.join(", ")
+            ));
+        }
+        names.push(name.to_string());
+    }
+    Ok(names)
 }
 
 // Accepts either a single literal character or the two-character escape
@@ -162,6 +204,22 @@ mod tests {
         assert_eq!(json_string("a\nb"), "\"a\\nb\"");
         assert_eq!(json_string("a\tb"), "\"a\\tb\"");
         assert_eq!(json_string("a\u{1}b"), "\"a\\u0001b\"");
+    }
+
+    #[test]
+    fn parse_rules_returns_bare_names() {
+        assert_eq!(
+            parse_rules("-stray-quote, -ragged-row"),
+            Ok(vec!["stray-quote".to_string(), "ragged-row".to_string()])
+        );
+    }
+
+    #[test]
+    fn parse_rules_rejects_unknown_names_and_missing_prefix() {
+        assert!(parse_rules("-no-such-rule").is_err());
+        assert!(parse_rules("stray-quote").is_err());
+        assert!(parse_rules("").is_err());
+        assert!(parse_rules("-stray-quote,").is_err());
     }
 
     #[test]

@@ -42,6 +42,17 @@ $ cargo run -- --json orders.csv
 `--json` and `--strict` combine normally: `--strict` still controls the
 exit code, it just doesn't change the shape of the JSON output.
 
+Pass `--rules` to turn individual checks off. Each entry is a rule name
+with a leading `-`, separated by commas:
+
+```
+$ cargo run -- --rules -stray-quote,-trailing-whitespace orders.csv
+```
+
+An unknown rule name is an error (exit code 2) rather than being ignored.
+Disabled rules are dropped from the output and do not affect the exit code.
+The rule names are the ones listed under "What it checks right now".
+
 Build a release binary the normal way:
 
 ```

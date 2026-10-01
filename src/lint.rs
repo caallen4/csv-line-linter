@@ -36,6 +36,18 @@ impl Finding {
     }
 }
 
+/// Every rule name a `Finding` can carry. `--rules` validates against this
+/// so a typo is an error instead of a check that silently stays on.
+pub const RULES: &[&str] = &[
+    "ragged-row",
+    "unclosed-quote",
+    "stray-quote",
+    "duplicate-column",
+    "trailing-whitespace",
+    "mixed-line-endings",
+    "byte-order-mark",
+];
+
 struct Record {
     line: usize,
     fields: Vec<String>,
@@ -526,6 +538,19 @@ mod tests {
     fn tab_delimiter_is_supported() {
         let findings = lint_with_delimiter("a\tb\n1\t2\n", '\t');
         assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn every_rule_in_the_table_cases_is_listed_in_rules() {
+        for case in CASES {
+            for finding in lint(case.input) {
+                assert!(
+                    RULES.contains(&finding.rule),
+                    "rule {:?} is missing from RULES",
+                    finding.rule
+                );
+            }
+        }
     }
 
     #[test]
